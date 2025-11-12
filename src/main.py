@@ -1,4 +1,4 @@
-"""
+﻿"""
 Main module for the TAEG (Text Analysis of Evangelic Gospels) project.
 Combines multiple gospels into a consolidated summary using LEXRANK and evaluates it.
 """
@@ -138,8 +138,8 @@ class TAEGPipeline:
             json.dump(eval_results, f, indent=2)
 
         print(f"\nResults saved to {output_path}/")
-        print(f"  📄 Summary: {summary_file.name}")
-        print(f"  📊 Evaluation: {eval_file.name}")
+        print(f"   Summary: {summary_file.name}")
+        print(f"   Evaluation: {eval_file.name}")
 
 
 def main():

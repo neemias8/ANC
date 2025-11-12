@@ -1,4 +1,4 @@
-"""
+﻿"""
 Preprocessing module for PRIMERA-based narrative consolidation.
 Handles event-based segmentation and chronological ordering of gospel texts.
 """
@@ -51,7 +51,7 @@ class PrimeraPreprocessor:
         """
         event_inputs = []
         
-        print(f"📚 Preparing event-based inputs for {len(self.events)} events...")
+        print(f" Preparing event-based inputs for {len(self.events)} events...")
         
         for event in self.events:
             event_id = event['id']
@@ -90,9 +90,9 @@ class PrimeraPreprocessor:
                     'num_gospels': len(gospel_versions)
                 })
                 
-                print(f"  ✓ Event {event_id:3d}: '{description[:50]}...' ({len(gospel_versions)} gospels, {len(combined_text)} chars)")
+                print(f"   Event {event_id:3d}: '{description[:50]}...' ({len(gospel_versions)} gospels, {len(combined_text)} chars)")
         
-        print(f"\n✅ Prepared {len(event_inputs)} events with gospel texts")
+        print(f"\n Prepared {len(event_inputs)} events with gospel texts")
         return event_inputs
     
     def prepare_mds_input(self) -> str:
@@ -103,21 +103,21 @@ class PrimeraPreprocessor:
         Returns:
             Multiple documents separated by <doc-sep> token
         """
-        print("📚 Preparing standard MDS input (multiple documents)...")
+        print(" Preparing standard MDS input (multiple documents)...")
         
         gospel_texts = self.biblical_loader.load_all_gospels()
         
         # Separate documents with PRIMERA's <doc-sep> token
-        # IMPORTANTE: PRIMERA espera múltiplos documentos separados
+        # IMPORTANTE: PRIMERA espera mltiplos documentos separados
         documents = []
         for gospel_name, text in gospel_texts.items():
-            # Cada evangelho é um documento separado
+            # Cada evangelho  um documento separado
             documents.append(text.strip())
         
         # Join with <doc-sep> special token for PRIMERA
         combined_text = " <doc-sep> ".join(documents)
         
-        print(f"✅ Prepared MDS input: {len(documents)} documents, {len(combined_text)} characters total")
+        print(f" Prepared MDS input: {len(documents)} documents, {len(combined_text)} characters total")
         return combined_text
     
     def _extract_verses(self, gospel: str, reference: str) -> str:
@@ -256,7 +256,7 @@ def main():
     event_inputs = preprocessor.prepare_event_based_inputs()
     
     # Show some examples
-    print("\n📋 Sample Events:")
+    print("\n Sample Events:")
     for event in event_inputs[:3]:
         print(f"\nEvent {event['event_id']}: {event['description']}")
         print(f"  Gospels: {list(event['gospel_versions'].keys())}")
@@ -287,3 +287,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

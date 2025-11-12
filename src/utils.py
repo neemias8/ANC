@@ -1,4 +1,4 @@
-"""
+﻿"""
 Utility functions for PRIMERA-based narrative consolidation.
 Handles model loading, seed configuration, and common utilities.
 """
@@ -49,7 +49,7 @@ class PrimeraModelLoader:
         else:
             self.device = device
         
-        print(f"🔧 Initializing PRIMERA on device: {self.device}")
+        print(f" Initializing PRIMERA on device: {self.device}")
         
         # Model and tokenizer will be loaded lazily
         self._model = None
@@ -59,7 +59,7 @@ class PrimeraModelLoader:
     def model(self):
         """Lazy load model."""
         if self._model is None:
-            print(f"📥 Loading PRIMERA model: {self.model_name}")
+            print(f" Loading PRIMERA model: {self.model_name}")
             try:
                 self._model = AutoModelForSeq2SeqLM.from_pretrained(
                     self.model_name,
@@ -67,9 +67,9 @@ class PrimeraModelLoader:
                 )
                 self._model.to(self.device)
                 self._model.eval()  # Set to evaluation mode
-                print(f"✅ Model loaded successfully")
+                print(f" Model loaded successfully")
             except Exception as e:
-                print(f"❌ Error loading model: {e}")
+                print(f" Error loading model: {e}")
                 raise
         return self._model
     
@@ -77,15 +77,15 @@ class PrimeraModelLoader:
     def tokenizer(self):
         """Lazy load tokenizer."""
         if self._tokenizer is None:
-            print(f"📥 Loading PRIMERA tokenizer: {self.model_name}")
+            print(f" Loading PRIMERA tokenizer: {self.model_name}")
             try:
                 self._tokenizer = AutoTokenizer.from_pretrained(
                     self.model_name,
                     cache_dir=self.cache_dir
                 )
-                print(f"✅ Tokenizer loaded successfully")
+                print(f" Tokenizer loaded successfully")
             except Exception as e:
-                print(f"❌ Error loading tokenizer: {e}")
+                print(f" Error loading tokenizer: {e}")
                 raise
         return self._tokenizer
     
@@ -133,7 +133,7 @@ class PrimeraModelLoader:
         # Verify input length is within bounds
         input_length = inputs['input_ids'].shape[1]
         if input_length >= max_input_length:
-            print(f"⚠️ Warning: Input truncated from {len(input_text)} chars to {input_length} tokens")
+            print(f" Warning: Input truncated from {len(input_text)} chars to {input_length} tokens")
         
         # Move to device
         inputs = {k: v.to(self.device) for k, v in inputs.items()}
@@ -190,7 +190,7 @@ def set_reproducibility_seed(seed: int = 42):
     Args:
         seed: Random seed value
     """
-    print(f"🌱 Setting reproducibility seed: {seed}")
+    print(f" Setting reproducibility seed: {seed}")
     
     # Python random
     random.seed(seed)
@@ -211,7 +211,7 @@ def set_reproducibility_seed(seed: int = 42):
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
     
-    print("✅ Reproducibility seed set successfully")
+    print(" Reproducibility seed set successfully")
 
 
 def format_input_for_primera(
@@ -222,8 +222,8 @@ def format_input_for_primera(
     """
     Format input text for PRIMERA model.
     
-    IMPORTANTE: PRIMERA é um modelo MULTI-DOCUMENT.
-    Se você tem múltiplos documentos, separe-os com ' <doc-sep> '.
+    IMPORTANTE: PRIMERA  um modelo MULTI-DOCUMENT.
+    Se voc tem mltiplos documentos, separe-os com ' <doc-sep> '.
     
     Exemplo para MDS:
         doc1 = "Gospel of Matthew text..."
@@ -231,7 +231,7 @@ def format_input_for_primera(
         input_text = f"{doc1} <doc-sep> {doc2}"
     
     Args:
-        text: Input text (pode conter múltiplos docs separados por <doc-sep>)
+        text: Input text (pode conter mltiplos docs separados por <doc-sep>)
         task_prefix: Optional task-specific prefix
         max_length: Maximum input length (PRIMERA supports up to 16384 tokens)
         
@@ -313,7 +313,7 @@ def save_output(text: str, output_path: str, method_name: str = ""):
     with open(output_file, 'w', encoding='utf-8') as f:
         f.write(text)
     
-    print(f"💾 Saved {method_name} output to: {output_path}")
+    print(f" Saved {method_name} output to: {output_path}")
     print(f"   Length: {len(text)} characters")
 
 
@@ -335,7 +335,7 @@ def load_reference_text(reference_path: str = "data/Golden_Sample.txt") -> str:
     with open(reference_file, 'r', encoding='utf-8') as f:
         text = f.read().strip()
     
-    print(f"📖 Loaded reference text: {len(text)} characters")
+    print(f" Loaded reference text: {len(text)} characters")
     return text
 
 
@@ -398,12 +398,12 @@ def print_gpu_memory():
     memory = get_gpu_memory_usage()
     
     if memory["available"]:
-        print("\n🎮 GPU Memory Usage:")
+        print("\n GPU Memory Usage:")
         print(f"   Allocated: {memory['allocated_mb']:.1f} MB")
         print(f"   Reserved:  {memory['reserved_mb']:.1f} MB")
         print(f"   Max Alloc: {memory['max_allocated_mb']:.1f} MB\n")
     else:
-        print("\n💻 Running on CPU (no GPU available)\n")
+        print("\n Running on CPU (no GPU available)\n")
 
 
 def main():
@@ -454,8 +454,9 @@ def main():
     # Test GPU memory
     print_gpu_memory()
     
-    print("\n✅ All utility tests completed!")
+    print("\n All utility tests completed!")
 
 
 if __name__ == "__main__":
     main()
+

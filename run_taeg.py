@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 """
 Simple runner script for TAEG pipeline.
 """
@@ -31,9 +31,9 @@ def main():
 
     if "error" not in results:
         pipeline.save_results(results)
-        print("\n✅ Pipeline completed successfully!")
+        print("\n Pipeline completed successfully!")
     else:
-        print(f"\n❌ Pipeline failed: {results['error']}")
+        print(f"\n Pipeline failed: {results['error']}")
         sys.exit(1)
 
 if __name__ == "__main__":

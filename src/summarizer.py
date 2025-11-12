@@ -1,4 +1,4 @@
-"""
+﻿"""
 Summarizer module using LEXRANK algorithm for text summarization.
 """
 
@@ -386,32 +386,32 @@ class LexRankTemporalAnchoring:
                         best_node_id, best_node_data = max(event_texts, key=lambda x: len(x[1]['text']))
                         event_summary = best_node_data['text']
                         gospel_name = best_node_data['gospel'].capitalize()
-                        print(f"📝 Event {event_id} ({event['description']}): Using complete text from {gospel_name} ({len(event_summary)} chars)")
+                        print(f" Event {event_id} ({event['description']}): Using complete text from {gospel_name} ({len(event_summary)} chars)")
                     else:
                         # Use multi-document LexRank if multiple gospels describe this event
                         texts_only = [node_data['text'] for node_id, node_data in event_texts]
                         if len(texts_only) > 1:
                             event_summary = self._summarize_multi_doc(texts_only, summary_length_per_event)
-                            print(f"📝 Event {event_id} ({event['description']}): Multi-doc summary from {len(texts_only)} gospels")
+                            print(f" Event {event_id} ({event['description']}): Multi-doc summary from {len(texts_only)} gospels")
                         else:
                             # Single document summary
                             event_summary = self._summarize_single_doc(texts_only[0], summary_length_per_event)
                             gospel_name = event_texts[0][1]['gospel'].capitalize()
-                            print(f"📝 Event {event_id} ({event['description']}): Single-doc summary from {gospel_name}")
+                            print(f" Event {event_id} ({event['description']}): Single-doc summary from {gospel_name}")
 
                     summaries.append(event_summary)
                 else:
                     # If no text found, use event description as fallback
-                    print(f"⚠️ Event {event_id} ({event['description']}): No text found, using description")
+                    print(f" Event {event_id} ({event['description']}): No text found, using description")
                     summaries.append(f"{event['description']}.")
             else:
-                print(f"⚠️ Event {event_id} ({event['description']}): No nodes found")
+                print(f" Event {event_id} ({event['description']}): No nodes found")
                 summaries.append(f"{event['description']}.")
 
         # Concatenate all event summaries
         full_summary = ' '.join(summaries)
 
-        print(f"\n✅ Generated summary with {len(summaries)} event summaries")
+        print(f"\n Generated summary with {len(summaries)} event summaries")
         return full_summary
 
     def _summarize_multi_doc(self, texts: List[str], summary_length: int) -> str:
@@ -462,3 +462,4 @@ class LexRankTemporalAnchoring:
         summary_sentences = lexrank.get_summary(sentences, summary_size=min(summary_length, len(sentences)))
 
         return ' '.join(summary_sentences)
+

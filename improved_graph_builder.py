@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 """
 Improved Graph Builder Module for TAEG - Better Node Structure
 Creates separate nodes for each gospel version of an event.
@@ -35,9 +35,9 @@ class ImprovedTemporalGraphBuilder:
         Returns:
             Dictionary representing the improved temporal graph
         """
-        print("🔍 Loading chronology data...")
+        print(" Loading chronology data...")
         events = self.chrono_loader.load_chronology()
-        print(f"✅ Loaded {len(events)} chronological events")
+        print(f" Loaded {len(events)} chronological events")
 
         graph = {
             'nodes': {},
@@ -55,7 +55,7 @@ class ImprovedTemporalGraphBuilder:
         }
 
         # Create nodes for each event
-        print("🏗️ Creating gospel-specific nodes...")
+        print(" Creating gospel-specific nodes...")
         for event in events:
             event_id = event['id']
 
@@ -88,20 +88,20 @@ class ImprovedTemporalGraphBuilder:
                 }
                 graph['statistics']['gospel_specific_nodes'] += 1
 
-                print(f"  📄 Created node {node_id}: '{event['description']}' ({gospel} {reference}) - {len(verse_text) if verse_text else 0} chars")
+                print(f"   Created node {node_id}: '{event['description']}' ({gospel} {reference}) - {len(verse_text) if verse_text else 0} chars")
 
         graph['statistics']['total_nodes'] = len(graph['nodes'])
-        print(f"✅ Created {len(graph['nodes'])} gospel-specific nodes")
+        print(f" Created {len(graph['nodes'])} gospel-specific nodes")
 
         # Create BEFORE edges between consecutive events (across all gospels)
-        print("🔗 Creating BEFORE edges...")
+        print(" Creating BEFORE edges...")
         self._create_before_edges(graph, events)
-        print(f"✅ Created {graph['statistics']['before_edges']} BEFORE edges")
+        print(f" Created {graph['statistics']['before_edges']} BEFORE edges")
 
         # Create SAME_EVENT edges between different gospel versions of the same event
-        print("🔗 Creating SAME_EVENT edges...")
+        print(" Creating SAME_EVENT edges...")
         self._create_same_event_edges(graph, events)
-        print(f"✅ Created {graph['statistics']['same_event_edges']} SAME_EVENT edges")
+        print(f" Created {graph['statistics']['same_event_edges']} SAME_EVENT edges")
 
         # Print detailed statistics
         self._print_improved_graph_statistics(graph)
@@ -200,7 +200,7 @@ class ImprovedTemporalGraphBuilder:
                             'from': current_node,
                             'to': next_node,
                             'type': 'BEFORE',
-                            'description': f"Event {current_event_id} → Event {next_event_id}"
+                            'description': f"Event {current_event_id}  Event {next_event_id}"
                         })
                         graph['statistics']['before_edges'] += 1
 
@@ -230,7 +230,7 @@ class ImprovedTemporalGraphBuilder:
                             'from': node1,
                             'to': node2,
                             'type': 'SAME_EVENT',
-                            'description': f"Same event {event_id}: {gospel1} ↔ {gospel2}"
+                            'description': f"Same event {event_id}: {gospel1}  {gospel2}"
                         })
                         graph['statistics']['same_event_edges'] += 1
 
@@ -239,28 +239,28 @@ class ImprovedTemporalGraphBuilder:
         stats = graph['statistics']
 
         print("\n" + "="*70)
-        print("📊 IMPROVED GRAPH STATISTICS")
+        print(" IMPROVED GRAPH STATISTICS")
         print("="*70)
 
-        print(f"📅 Total Events: {stats['total_events']}")
-        print(f"🏗️ Total Nodes: {stats['total_nodes']}")
-        print(f"📄 Gospel-Specific Nodes: {stats['gospel_specific_nodes']}")
-        print(f"🔗 BEFORE Edges: {stats['before_edges']}")
-        print(f"🔄 SAME_EVENT Edges: {stats['same_event_edges']}")
-        print(f"📚 Events with Multiple Gospels: {stats['events_with_multiple_gospels']}")
+        print(f" Total Events: {stats['total_events']}")
+        print(f" Total Nodes: {stats['total_nodes']}")
+        print(f" Gospel-Specific Nodes: {stats['gospel_specific_nodes']}")
+        print(f" BEFORE Edges: {stats['before_edges']}")
+        print(f" SAME_EVENT Edges: {stats['same_event_edges']}")
+        print(f" Events with Multiple Gospels: {stats['events_with_multiple_gospels']}")
 
-        print("\n📖 Gospel Distribution:")
+        print("\n Gospel Distribution:")
         for gospel, count in stats['gospel_distribution'].items():
             print(f"  {gospel.capitalize()}: {count} mentions")
 
-        print("\n🔍 Sample Gospel-Specific Nodes:")
+        print("\n Sample Gospel-Specific Nodes:")
         sample_nodes = list(graph['nodes'].items())[:8]
         for node_id, node_data in sample_nodes:
             text_preview = node_data['text'][:100] + "..." if node_data['text'] and len(node_data['text']) > 100 else node_data['text']
             print(f"  {node_id}: '{node_data['description']}' ({node_data['gospel']} {node_data['reference']})")
             print(f"    Text: {text_preview}")
 
-        print("\n🔗 Sample Edges:")
+        print("\n Sample Edges:")
         for edge in graph['edges'][:10]:
             print(f"  {edge['from']} --[{edge['type']}]--> {edge['to']}")
 
@@ -272,14 +272,14 @@ class ImprovedTemporalGraphBuilder:
 
 def main():
     """Main function to build and analyze the improved temporal graph."""
-    print("🚀 TAEG - Improved Temporal Graph Builder")
+    print(" TAEG - Improved Temporal Graph Builder")
     print("="*70)
 
     builder = ImprovedTemporalGraphBuilder()
     graph = builder.build_improved_temporal_graph()
 
-    print("\n✅ Improved graph construction completed!")
-    print(f"📊 Graph has {graph['statistics']['total_nodes']} nodes and {len(graph['edges'])} edges")
+    print("\n Improved graph construction completed!")
+    print(f" Graph has {graph['statistics']['total_nodes']} nodes and {len(graph['edges'])} edges")
 
 
 if __name__ == "__main__":

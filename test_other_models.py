@@ -29,9 +29,9 @@ class ModelTester:
         self.evaluator = SummarizationEvaluator()
         
         # Load golden sample once
-        print("\n📖 Loading Golden Sample...")
+        print("\n Loading Golden Sample...")
         self.golden_sample = self.data_loader.load_golden_sample()
-        print(f"✅ Golden Sample loaded: {len(self.golden_sample)} characters")
+        print(f" Golden Sample loaded: {len(self.golden_sample)} characters")
         
     def test_bart_large_cnn(self, max_length: int = 1024):
         """Test facebook/bart-large-cnn (CNN/DailyMail fine-tuned)."""
@@ -39,19 +39,19 @@ class ModelTester:
         print("TESTING BART-LARGE-CNN")
         print("="*70)
         
-        print("\n📥 Loading BART model and tokenizer...")
+        print("\n Loading BART model and tokenizer...")
         model_name = "facebook/bart-large-cnn"
         tokenizer = BartTokenizer.from_pretrained(model_name)
         model = BartForConditionalGeneration.from_pretrained(model_name).to(self.device)
-        print("✅ Model loaded")
+        print(" Model loaded")
         
         # Prepare input
-        print("\n📚 Preparing input...")
+        print("\n Preparing input...")
         formatted_input = self.preprocessor.prepare_mds_input()
         print(f"   Input length: {len(formatted_input):,} characters")
         
         # Generate
-        print(f"\n🤖 Generating summary (max_length={max_length})...")
+        print(f"\n Generating summary (max_length={max_length})...")
         start_time = time.time()
         
         inputs = tokenizer(
@@ -76,11 +76,11 @@ class ModelTester:
         summary = tokenizer.decode(output_ids[0], skip_special_tokens=True)
         elapsed = time.time() - start_time
         
-        print(f"✅ Summary generated: {len(summary):,} characters in {elapsed:.1f}s")
-        print(f"\n📝 Preview:\n{summary[:500]}...\n")
+        print(f" Summary generated: {len(summary):,} characters in {elapsed:.1f}s")
+        print(f"\n Preview:\n{summary[:500]}...\n")
         
         # Evaluate
-        print("\n📊 Evaluating...")
+        print("\n Evaluating...")
         results = self.evaluator.evaluate_summary(summary, self.golden_sample)
         
         # Save
@@ -102,19 +102,19 @@ class ModelTester:
         print("TESTING PEGASUS-XSUM")
         print("="*70)
         
-        print("\n📥 Loading PEGASUS model and tokenizer...")
+        print("\n Loading PEGASUS model and tokenizer...")
         model_name = "google/pegasus-xsum"
         tokenizer = PegasusTokenizer.from_pretrained(model_name)
         model = PegasusForConditionalGeneration.from_pretrained(model_name).to(self.device)
-        print("✅ Model loaded")
+        print(" Model loaded")
         
         # Prepare input
-        print("\n📚 Preparing input...")
+        print("\n Preparing input...")
         formatted_input = self.preprocessor.prepare_mds_input()
         print(f"   Input length: {len(formatted_input):,} characters")
         
         # Generate
-        print(f"\n🤖 Generating summary (max_length={max_length})...")
+        print(f"\n Generating summary (max_length={max_length})...")
         start_time = time.time()
         
         # PEGASUS-XSUM has max_position_embeddings = 512
@@ -131,7 +131,7 @@ class ModelTester:
         # Check actual input length
         input_length = inputs['input_ids'].shape[1]
         if input_length >= max_input_length:
-            print(f"⚠️ Warning: Input truncated to {input_length} tokens")
+            print(f" Warning: Input truncated to {input_length} tokens")
         
         with torch.no_grad():
             output_ids = model.generate(
@@ -147,11 +147,11 @@ class ModelTester:
         summary = tokenizer.decode(output_ids[0], skip_special_tokens=True)
         elapsed = time.time() - start_time
         
-        print(f"✅ Summary generated: {len(summary):,} characters in {elapsed:.1f}s")
-        print(f"\n📝 Preview:\n{summary[:500]}...\n")
+        print(f" Summary generated: {len(summary):,} characters in {elapsed:.1f}s")
+        print(f"\n Preview:\n{summary[:500]}...\n")
         
         # Evaluate
-        print("\n📊 Evaluating...")
+        print("\n Evaluating...")
         results = self.evaluator.evaluate_summary(summary, self.golden_sample)
         
         # Save
@@ -173,19 +173,19 @@ class ModelTester:
         print("TESTING PEGASUS-LARGE")
         print("="*70)
         
-        print("\n📥 Loading PEGASUS-Large model and tokenizer...")
+        print("\n Loading PEGASUS-Large model and tokenizer...")
         model_name = "google/pegasus-large"
         tokenizer = PegasusTokenizer.from_pretrained(model_name)
         model = PegasusForConditionalGeneration.from_pretrained(model_name).to(self.device)
-        print("✅ Model loaded")
+        print(" Model loaded")
         
         # Prepare input
-        print("\n📚 Preparing input...")
+        print("\n Preparing input...")
         formatted_input = self.preprocessor.prepare_mds_input()
         print(f"   Input length: {len(formatted_input):,} characters")
         
         # Generate
-        print(f"\n🤖 Generating summary (max_length={max_length})...")
+        print(f"\n Generating summary (max_length={max_length})...")
         start_time = time.time()
         
         # PEGASUS-Large has max_position_embeddings = 1024
@@ -202,7 +202,7 @@ class ModelTester:
         # Check actual input length
         input_length = inputs['input_ids'].shape[1]
         if input_length >= max_input_length:
-            print(f"⚠️ Warning: Input truncated to {input_length} tokens")
+            print(f" Warning: Input truncated to {input_length} tokens")
         
         with torch.no_grad():
             output_ids = model.generate(
@@ -218,11 +218,11 @@ class ModelTester:
         summary = tokenizer.decode(output_ids[0], skip_special_tokens=True)
         elapsed = time.time() - start_time
         
-        print(f"✅ Summary generated: {len(summary):,} characters in {elapsed:.1f}s")
-        print(f"\n📝 Preview:\n{summary[:500]}...\n")
+        print(f" Summary generated: {len(summary):,} characters in {elapsed:.1f}s")
+        print(f"\n Preview:\n{summary[:500]}...\n")
         
         # Evaluate
-        print("\n📊 Evaluating...")
+        print("\n Evaluating...")
         results = self.evaluator.evaluate_summary(summary, self.golden_sample)
         
         # Save
@@ -244,7 +244,7 @@ class ModelTester:
         print("MODEL COMPARISON RESULTS")
         print("="*80)
         
-        print(f"\n{'Model':<20} | {'Kendall τ':>10} | {'ROUGE-L':>10} | {'BERTScore':>10} | {'Length':>10} | {'Time':>8}")
+        print(f"\n{'Model':<20} | {'Kendall ':>10} | {'ROUGE-L':>10} | {'BERTScore':>10} | {'Length':>10} | {'Time':>8}")
         print("-" * 80)
         
         for result in results_list:
@@ -262,7 +262,7 @@ class ModelTester:
         
         # Find best model
         best_tau = max(results_list, key=lambda x: x['results']['kendall_tau'])
-        print(f"\n🏆 Best Kendall's Tau: {best_tau['model']} (τ={best_tau['results']['kendall_tau']:.3f})")
+        print(f"\n Best Kendall's Tau: {best_tau['model']} (={best_tau['results']['kendall_tau']:.3f})")
 
 
 def main():
@@ -296,7 +296,7 @@ def main():
     
     # Setup device
     device = "cpu" if args.device == "cpu" or not torch.cuda.is_available() else "cuda"
-    print(f"\n💻 Using device: {device}")
+    print(f"\n Using device: {device}")
     
     # Initialize tester
     tester = ModelTester(device=device)
@@ -321,7 +321,7 @@ def main():
     if results:
         tester.print_comparison(results)
     
-    print("\n✅ All tests completed!")
+    print("\n All tests completed!")
 
 
 if __name__ == "__main__":
