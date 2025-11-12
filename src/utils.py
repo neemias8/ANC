@@ -118,14 +118,22 @@ class PrimeraModelLoader:
         Returns:
             Generated text
         """
-        # Tokenize input
+        # Tokenize input with safe max_length
+        # PRIMERA's max position embedding is 16384, but we use a conservative limit
+        max_input_length = min(16384, self.model.config.max_position_embeddings - 1)
+        
         inputs = self.tokenizer(
             input_text,
-            max_length=16384,  # PRIMERA can handle very long inputs
+            max_length=max_input_length,
             padding=True,  # Only pad to longest sequence, not max_length
             truncation=True,
             return_tensors="pt"
         )
+        
+        # Verify input length is within bounds
+        input_length = inputs['input_ids'].shape[1]
+        if input_length >= max_input_length:
+            print(f"⚠️ Warning: Input truncated from {len(input_text)} chars to {input_length} tokens")
         
         # Move to device
         inputs = {k: v.to(self.device) for k, v in inputs.items()}
