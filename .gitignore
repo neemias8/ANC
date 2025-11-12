@@ -37,3 +37,25 @@ wheels/
 # VS Code
 .vscode/settings.json
 .vscode/launch.json
+
+# Large model files (PyTorch, Transformers cache)
+*.bin
+*.safetensors
+*.pt
+*.pth
+*.ckpt
+models/
+.cache/
+huggingface/
+torch/hub/
+
+# NLTK data
+nltk_data/
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# Test outputs (keep only final comparison report)
+outputs/*.txt
+!outputs/comparison_report.txt
+outputs/evaluation/*.json
