@@ -4,7 +4,7 @@
 
 This repository explores **Narrative Consolidation** by comparing extractive (TAEG) and abstractive (PRIMERA) approaches for unifying multiple gospel accounts of the Passion Week. The project investigates whether state-of-the-art multi-document summarization models can achieve comparable performance to purpose-built extractive methods while maintaining chronological integrity and factual accuracy.
 
-> 📋 **TL;DR**: **PRIMERA Event-by-Event achieves near-perfect results** (τ=0.976, 99.4% coverage) using event-based prompting, making it a viable abstractive alternative to TAEG. Standard MDS approaches fail at narrative consolidation. See full findings below.
+> 📋 **TL;DR**: **PRIMERA Event-by-Event achieves near-perfect results** (τ=0.976) using event-based decomposition, making it a viable abstractive alternative to TAEG. Standard MDS approaches fail at narrative consolidation. See full findings below.
 
 ### **Background: The Narrative Consolidation Task**
 
@@ -29,44 +29,63 @@ This repository explores **Narrative Consolidation** by comparing extractive (TA
 
 ## **🔬 Key Findings**
 
-### **1. PRIMERA Event-by-Event Approach Succeeds**
-- **Kendall's Tau: 0.9758** (97.6% chronological accuracy)
-- **Coverage: 162/163 events** (99.4%; only event #53 missing)
-- **Method**: Event-based prompting with numbered structure
-- **Result**: Abstractive model achieves near-perfect temporal ordering
+### **1. Standard MDS Models Fail at Narrative Consolidation**
 
-### **2. Event ID-Based Kendall's Tau Metric**
-Traditional Kendall's Tau compares sentence-level ordering, which penalizes abstractive methods for paraphrasing identical content. We developed an **event ID-based metric** that:
-- Extracts numbered events (e.g., "42 Jesus enters Jerusalem")
-- Compares only the relative ordering of common events
-- Ignores paraphrasing/rephrasing differences
-- Reports coverage (events found / total events)
+Traditional multi-document summarization models (BART, PEGASUS, PRIMERA-MDS) are fundamentally unsuitable for narrative consolidation tasks:
 
-**Implementation**: Regex pattern `\b(\d+)\s+"?([A-Z])` extracts event IDs from both reference and hypothesis summaries, then calculates rank correlation on common events only.
+| Model | Kendall's Tau | Max Input | Max Output | Issue |
+|-------|--------------|-----------|------------|-------|
+| **PEGASUS-XSUM** | 0.0846 | 512 tokens | 64 tokens | Extreme compression loses temporal structure |
+| **PEGASUS-Large** | 0.1110 | 1024 tokens | 256 tokens | Generic summaries, poor chronology |
+| **PRIMERA-MDS** | 0.5104 | 4096 tokens | 1024 tokens | Aggressive compression destroys narrative flow |
+| **BART-Large-CNN** | 0.5802 | 1024 tokens | 142 tokens | Single-document training inadequate for multi-doc fusion |
 
-### **3. Discovery: PRIMERA's Event-Based Capability**
-Through trial-and-error, we discovered PRIMERA can maintain event structure when prompted to:
-1. Number each event sequentially
-2. Use one sentence per event
-3. Maintain chronological order
+**Root Cause:** These models are trained to produce **concise summaries** from long documents. When faced with narrative consolidation (requiring **completeness** not brevity), they:
+- **Architectural bottlenecks:** Input/output length limits prevent processing complete narratives (4 gospels = ~40,000+ tokens)
+- **Output corruption:** Generate garbled text with encoding artifacts requiring post-processing cleanup (e.g., "Jesus said ÁááààÁÊó to the disciples", random character sequences like "ÊÊÊóóó" appearing mid-sentence or at sentence endings)
+- Aggressively compress content, losing critical events
+- Fail to maintain temporal ordering across multiple source documents
+- Generate severe hallucinations (fabricated content, theological nonsense)
+- Cannot handle the length requirements of comprehensive narrative integration (output needs ~10,000+ tokens)
 
-This approach yields dramatically better results than standard MDS prompting (τ=0.976 vs τ=0.51).
+### **2. PRIMERA Event-by-Event: Solving the Long Document Problem**
+
+The breakthrough came from **decomposing the long consolidation task into event-level segments**:
+
+**Standard MDS Problem:**
+- Input: 4 long gospel texts → Output: 1 compressed summary
+- Model struggles with length, loses temporal structure
+- Result: τ=0.51 (poor chronological order)
+
+**Event-Based Solution:**
+- Input: 4 gospel segments per event → Output: 1 consolidated event
+- Process 169 events independently with numbered structure
+- Reassemble into complete chronological narrative
+- Result: **τ=0.976** (near-perfect chronological order)
+
+
+### **3. Event ID-Based Evaluation Metric**
+
+To properly evaluate abstractive methods that paraphrase content, we developed an event ID-based Kendall's Tau metric:
+- Extracts numbered events using regex: `\b(\d+)\s+"?([A-Z])`
+- Compares only relative ordering of common events
+- Ignores paraphrasing differences (measures structure, not wording)
+- Reveals PRIMERA Event-by-Event maintains 97.6% chronological accuracy
 
 ### **4. Comparative Model Performance**
 
-| Model | Kendall's Tau | Event Coverage | Type | Notes |
-|-------|--------------|----------------|------|-------|
-| **TAEG (LexRank-TA)** | **1.0000** | 163/163 (100%) | Extractive | Perfect baseline |
-| **PRIMERA Event-by-Event** | **0.9758** | 162/163 (99.4%) | Abstractive | Near-perfect |
-| **PRIMERA-MDS** | 0.5104 | ~60% | Abstractive | Standard mode |
-| **BART-Large-CNN** | 0.5802 | ~65% | Abstractive | Single-doc trained |
-| **PEGASUS-Large** | 0.1110 | ~30% | Abstractive | Poor chronology |
-| **PEGASUS-XSUM** | 0.0846 | ~25% | Abstractive | Extreme compression |
+| Model | Kendall's Tau | Type | Notes |
+|-------|--------------|------|-------|
+| **TAEG (LexRank-TA)** | **1.0000** | Extractive | Perfect baseline |
+| **PRIMERA Event-by-Event** | **0.9758** | Abstractive | Near-perfect |
+| **PRIMERA-MDS** | 0.5104 | Abstractive | Standard mode |
+| **BART-Large-CNN** | 0.5802 | Abstractive | Single-doc trained |
+| **PEGASUS-Large** | 0.1110 | Abstractive | Poor chronology |
+| **PEGASUS-XSUM** | 0.0846 | Abstractive | Extreme compression |
 
 **Key Insights:**
-- Event-based prompting is critical for chronological accuracy
+- Event-based decomposition is critical for chronological accuracy
 - Standard MDS models struggle with temporal ordering across documents
-- Only 1 event truly missing from PRIMERA output (event #53)
 - TAEG remains the gold standard but PRIMERA Event-by-Event is competitive
 
 ### **5. Hallucination Analysis**
@@ -76,7 +95,7 @@ This approach yields dramatically better results than standard MDS prompting (τ
 | Model | Hallucination Level | Factual Accuracy | Example Issues |
 |-------|-------------------|------------------|----------------|
 | **TAEG** | ✅ **None** | 100% | Extractive—copies sentences verbatim |
-| **PRIMERA Event-by-Event** | ✅ **Minimal** | ~99% | Minor paraphrasing; **1 neural collapse** (Event #83) |
+| **PRIMERA Event-by-Event** | ✅ **Minimal** | ~98.8% | **2 generation failures**: neural collapse (#83), repetitive loop (#120) |
 | **PRIMERA-MDS** | ⚠️ **Severe** | ~40% | **Fabricated narrative**, nonsensical sequences |
 | **BART-Large-CNN** | ⚠️ **Moderate** | ~75% | Invented dialogue, compressed events |
 | **PEGASUS-Large** | ⚠️ **Moderate** | ~70% | Generic summaries, missing specifics |
@@ -91,10 +110,10 @@ This approach yields dramatically better results than standard MDS prompting (τ
 **PRIMERA Event-by-Event:**
 - **Minimal hallucinations** (~1% error rate)
 - Maintains factual accuracy through numbered event structure
-- Minor issues: occasional paraphrasing imprecision (e.g., "Jesus answered them" vs. "Jesus replied")
-- No fabricated events or invented content
-- Event-based prompting enforces grounding in source material
-- **Critical Exception: Event #83 shows neural degeneracy** - model "collapsed" mid-generation, producing completely incoherent output mixing gospel content with modern references (COVID-19, school shootings, technology instructions). This represents ~0.6% of all events and appears to be a one-time generation failure rather than systematic hallucination.
+- Event-based segmentation enforces grounding in source material
+- **Generation Failures (rare occurrences):**
+  - **Neural collapse** (e.g., Event 83) - complete loss of coherence with anachronistic modern content (COVID-19, school shootings, technology)
+  - **Repetitive degeneration** (e.g., Event 120) - model trapped in loop repeating same information without completing sentence structure
 
 **PRIMERA Standard MDS:**
 - **CRITICAL: Severe hallucinations detected**
@@ -118,25 +137,26 @@ This approach yields dramatically better results than standard MDS prompting (τ
 
 **Critical Takeaway:**
 - **Event-based structuring prevents hallucinations** in abstractive models
-- PRIMERA Event-by-Event achieves 99% factual accuracy through:
+- PRIMERA Event-by-Event achieves 98.8% factual accuracy through:
   1. Numbered event constraints
   2. One-event-per-generation focus
   3. Explicit temporal ordering
-- Standard MDS prompting produces dangerous hallucinations for consolidation tasks
-- **Neural degeneracy risk:** Even constrained models can experience rare generation failures (Event #83: model "collapse" with complete loss of coherence, mixing modern content like "COVID-19", "AR-15", "HTML5 video" with biblical narrative)
+- Standard MDS approaches produce dangerous hallucinations for consolidation tasks
+- **Generation failure modes observed (rare):**
+  - **Neural collapse**: Complete coherence loss with anachronistic content mixing (COVID-19, AR-15, modern technology appearing in biblical context)
+  - **Repetitive degeneration**: Model trapped in self-reinforcing loop, repeating semantically equivalent phrases without sentence completion
 
 ---
 
 ## **Three Methods Compared**
-## **Three Methods Compared**
 
-| Method | Type | Chronological Order | Coverage | Factual Accuracy | Best For |
-|--------|------|-------------------|----------|------------------|----------|
-| **TAEG** | Extractive | ✅ Perfect (τ=1.0) | ✅ Complete (100%) | ✅ 100% | Literal preservation |
-| **PRIMERA Event-by-Event** | Abstractive | ✅ Near-perfect (τ=0.976) | ✅ 99.4% (162/163) | ✅ 99% | Fluency + accuracy |
-| **PRIMERA-MDS** | Abstractive | ⚠️ Poor (τ=0.51) | ❌ Concise only | ❌ ~40% | ❌ Not recommended |
+| Method | Type | Chronological Order | Factual Accuracy | Best For |
+|--------|------|-------------------|------------------|----------|
+| **TAEG** | Extractive | ✅ Perfect (τ=1.0) | ✅ 100% | Literal preservation |
+| **PRIMERA Event-by-Event** | Abstractive | ✅ Near-perfect (τ=0.976) | ✅ ~99% | Fluency + accuracy |
+| **PRIMERA-MDS** | Abstractive | ⚠️ Poor (τ=0.51) | ❌ ~40% | ❌ Not recommended |
 
-**Key Discovery**: PRIMERA Event-by-Event achieves **near-perfect chronological order** (τ=0.976) by processing events individually with numbered IDs. Only **1 event missing** (event #53) out of 163 total events.
+**Key Discovery**: PRIMERA Event-by-Event achieves **near-perfect chronological order** (τ=0.976) by decomposing the long consolidation task into individual numbered events, avoiding the length and compression issues that plague standard MDS models.
 
 **Conclusion**: 
 - **TAEG** remains superior for **perfect order** and **literal preservation**
@@ -175,7 +195,6 @@ All methods are evaluated against the **Golden Sample** using identical metrics:
 | Metric | TAEG (Baseline) | PRIMERA Event-by-Event | PRIMERA-MDS |
 |--------|----------------|----------------------|-------------|
 | **Kendall's Tau** | 1.000 | **0.976** | ~0.51 |
-| **Event Coverage** | 163/163 (100%) | **162/163 (99.4%)** | ~60% |
 | **ROUGE-1 F1** | 0.958 | ~0.90-0.95 | ~0.7-0.8 |
 | **ROUGE-2 F1** | 0.938 | ~0.85-0.92 | ~0.6-0.7 |
 | **ROUGE-L F1** | 0.947 | ~0.90-0.95 | ~0.5-0.6 |
@@ -185,8 +204,8 @@ All methods are evaluated against the **Golden Sample** using identical metrics:
 
 **Key Findings:**
 1. PRIMERA Event-by-Event achieves near-perfect temporal order (τ = 0.976)
-2. Only 1 event (#53) missing from output; all others present and correctly ordered
-3. Event-based prompting is critical for chronological accuracy
+2. Event-based decomposition solves the long document problem that plagues standard MDS
+3. Event-based segmentation is critical for chronological accuracy
 4. Standard PRIMERA-MDS shows poor temporal ordering (τ = 0.51)
 
 ---
@@ -317,14 +336,13 @@ MIT License - See `LICENSE` for details.
 
 ## **Key Takeaways**
 
-1. ✅ **PRIMERA Event-by-Event achieves near-perfect results** (τ=0.976, 99.4% coverage, 99% factual accuracy)
-2. ✅ **TAEG remains gold standard** for perfect chronological order (τ=1.0) and zero hallucinations
-3. 🔬 **Event-based prompting is critical** - prevents hallucinations and maintains temporal order
-4. ⚠️ **PRIMERA Standard MDS produces severe hallucinations** - fabricated narrative, theological nonsense
+1. ✅ **PRIMERA Event-by-Event achieves near-perfect results** (τ=0.976, ~99% factual accuracy)
+2. ✅ **Event-based decomposition solves the long document problem** - breaking narrative into individual events prevents compression and preserves temporal structure
+3. ✅ **TAEG remains gold standard** for perfect chronological order (τ=1.0) and zero hallucinations
+4. 🔬 **Standard MDS models fundamentally fail** - BART, PEGASUS, PRIMERA-MDS show poor temporal ordering (τ<0.6) and severe hallucinations
 5. 📊 **Event ID-based Kendall's Tau** reveals true chronological accuracy beyond sentence matching
-6. ⚠️ **Only 1 event missing** from PRIMERA output (event #53 out of 163)
-7. ❌ **General-purpose models fail** - BART, PEGASUS show poor temporal ordering (τ<0.6) and moderate hallucinations
-8. 🎯 **Factual accuracy vs fluency tradeoff** - Event-based structure prevents hallucinations while maintaining readability
+6. ⚠️ **PRIMERA Standard MDS produces severe hallucinations** - fabricated narrative, theological nonsense
+7. 🎯 **Rare generation failure modes** - Neural collapse and repetitive degeneration occur occasionally even with event-based constraints
 
 > 📖 **Read [`DESCOBERTAS_PROYECTO.md`](DESCOBERTAS_PROYECTO.md) for detailed technical findings, implementation notes, and recommendations for using PRIMERA in narrative consolidation projects.**
 
