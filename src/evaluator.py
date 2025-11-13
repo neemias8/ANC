@@ -241,9 +241,8 @@ class SummarizationEvaluator:
         """
         Calculate Kendall's Tau by comparing event ordering in hypothesis vs reference (Golden Sample).
 
-        This method uses position-based correlation to assess temporal preservation.
-        It assumes both the hypothesis and reference are in chronological order, and
-        calculates how well the relative positions of sentences are preserved.
+        This method finds where each hypothesis sentence appears in the reference text
+        and calculates if their order is preserved.
 
         Args:
             hypothesis: Generated summary
@@ -260,29 +259,60 @@ class SummarizationEvaluator:
             if len(hyp_sentences) < 2:
                 return 0.0
             
-            # Use position-based correlation
-            # Both hypothesis and reference are assumed to be in chronological order
-            # Calculate Tau by comparing sentence positions
+            # Find where each hypothesis sentence appears in the reference
+            # Use simple word overlap to match sentences
+            hyp_positions_in_ref = []
             
-            # Map hypothesis sentences to reference proportionally
-            # This accounts for different total sentence counts while preserving order
-            num_hyp = len(hyp_sentences)
-            num_ref = len(ref_sentences)
+            for hyp_sent in hyp_sentences:
+                # Get words from hypothesis sentence
+                hyp_words = set(hyp_sent.split())
+                if len(hyp_words) < 3:  # Skip very short sentences
+                    continue
+                
+                # Find best matching sentence in reference
+                best_match_pos = -1
+                best_match_score = 0
+                
+                for ref_pos, ref_sent in enumerate(ref_sentences):
+                    ref_words = set(ref_sent.split())
+                    if len(ref_words) < 3:
+                        continue
+                    
+                    # Calculate Jaccard similarity (intersection over union)
+                    intersection = len(hyp_words & ref_words)
+                    union = len(hyp_words | ref_words)
+                    
+                    if union > 0:
+                        similarity = intersection / union
+                        if similarity > best_match_score and similarity > 0.1:  # Minimum threshold
+                            best_match_score = similarity
+                            best_match_pos = ref_pos
+                
+                if best_match_pos >= 0:
+                    hyp_positions_in_ref.append(best_match_pos)
             
-            # Create position arrays
-            hyp_positions = list(range(num_hyp))
-            # Scale hypothesis positions to reference range proportionally
-            ref_positions_mapped = [int(i * num_ref / num_hyp) for i in range(num_hyp)]
+            # Need at least 2 matched sentences to calculate correlation
+            if len(hyp_positions_in_ref) < 2:
+                print(f"Kendall's Tau calculation:")
+                print(f"  - Matched sentences: {len(hyp_positions_in_ref)} (need at least 2)")
+                print(f"  - Cannot calculate correlation")
+                return 0.0
             
-            # Calculate Kendall's Tau between the two position sequences
-            tau, _ = kendalltau(hyp_positions, ref_positions_mapped)
+            # Calculate Kendall's Tau
+            # Expected order: 0, 1, 2, 3, ... (order in hypothesis)
+            # Found order: positions in reference text
+            expected_order = list(range(len(hyp_positions_in_ref)))
+            found_order = hyp_positions_in_ref
+            
+            tau, _ = kendalltau(expected_order, found_order)
             
             print(f"Kendall's Tau calculation:")
-            print(f"  - Method: Position-based correlation")
-            print(f"  - Hypothesis sentences: {num_hyp}, Reference sentences: {num_ref}")
+            print(f"  - Hypothesis sentences: {len(hyp_sentences)}")
+            print(f"  - Matched sentences: {len(hyp_positions_in_ref)}")
+            print(f"  - Reference positions: {found_order[:10]}{'...' if len(found_order) > 10 else ''}")
             print(f"  - Kendall's Tau: {tau:.4f}")
             
-            return tau if not np.isnan(tau) else 1.0
+            return tau if not np.isnan(tau) else 0.0
 
         except Exception as e:
             print(f"Warning: Error calculating Kendall's Tau from Golden Sample: {e}")
