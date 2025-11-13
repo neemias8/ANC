@@ -241,8 +241,8 @@ class SummarizationEvaluator:
         """
         Calculate Kendall's Tau by comparing event ordering in hypothesis vs reference (Golden Sample).
 
-        This method finds where each hypothesis sentence appears in the reference text
-        and calculates if their order is preserved.
+        This method identifies key events in the Golden Sample (which has known chronological order)
+        and finds their order in the generated summary to assess temporal preservation.
 
         Args:
             hypothesis: Generated summary
@@ -252,70 +252,62 @@ class SummarizationEvaluator:
             Kendall's Tau correlation coefficient (-1 to 1)
         """
         try:
+            # Load chronological events from XML to get event descriptions
+            chrono_loader = ChronologyLoader()
+            events = chrono_loader.load_chronology()
+
+            if not events:
+                return 0.0
+
+            # Get event descriptions and IDs
+            event_data = [(i, event['description'].lower()) for i, event in enumerate(events)]
+
             # Split texts into sentences
             ref_sentences = nltk.sent_tokenize(reference.lower())
             hyp_sentences = nltk.sent_tokenize(hypothesis.lower())
 
             if len(hyp_sentences) < 2:
                 return 0.0
-            
-            # Find where each hypothesis sentence appears in the reference
-            # Use simple word overlap to match sentences
-            hyp_positions_in_ref = []
-            
-            for hyp_sent in hyp_sentences:
-                # Get words from hypothesis sentence
-                hyp_words = set(hyp_sent.split())
-                if len(hyp_words) < 3:  # Skip very short sentences
-                    continue
-                
-                # Find best matching sentence in reference
-                best_match_pos = -1
-                best_match_score = 0
-                
-                for ref_pos, ref_sent in enumerate(ref_sentences):
-                    ref_words = set(ref_sent.split())
-                    if len(ref_words) < 3:
-                        continue
-                    
-                    # Calculate Jaccard similarity (intersection over union)
-                    intersection = len(hyp_words & ref_words)
-                    union = len(hyp_words | ref_words)
-                    
-                    if union > 0:
-                        similarity = intersection / union
-                        if similarity > best_match_score and similarity > 0.1:  # Minimum threshold
-                            best_match_score = similarity
-                            best_match_pos = ref_pos
-                
-                if best_match_pos >= 0:
-                    hyp_positions_in_ref.append(best_match_pos)
-            
-            # Need at least 2 matched sentences to calculate correlation
-            if len(hyp_positions_in_ref) < 2:
-                print(f"Kendall's Tau calculation:")
-                print(f"  - Matched sentences: {len(hyp_positions_in_ref)} (need at least 2)")
-                print(f"  - Cannot calculate correlation")
-                return 0.0
-            
-            # Calculate Kendall's Tau
-            # Expected order: 0, 1, 2, 3, ... (order in hypothesis)
-            # Found order: positions in reference text
-            expected_order = list(range(len(hyp_positions_in_ref)))
-            found_order = hyp_positions_in_ref
-            
+
+            # Find events in reference (Golden Sample) - these define the expected chronological order
+            ref_event_positions = {}
+            for event_id, event_desc in event_data:
+                for j, sentence in enumerate(ref_sentences):
+                    # Look for event in reference sentences
+                    if any(keyword in sentence for keyword in event_desc.split()[:3]):  # Use first 3 words for matching
+                        ref_event_positions[event_id] = j
+                        break
+
+            # Find the same events in hypothesis (generated summary)
+            hyp_event_positions = {}
+            for event_id, event_desc in event_data:
+                for j, sentence in enumerate(hyp_sentences):
+                    # Look for event in hypothesis sentences
+                    if any(keyword in sentence for keyword in event_desc.split()[:3]):  # Use first 3 words for matching
+                        hyp_event_positions[event_id] = j
+                        break
+
+            # Only consider events found in both texts
+            common_events = set(ref_event_positions.keys()) & set(hyp_event_positions.keys())
+
+            if len(common_events) < 2:
+                # If we can't find enough events, return a low score
+                coverage_penalty = len(common_events) / len(events)
+                return coverage_penalty * 0.3  # Low score for poor event coverage
+
+            # Create orderings based on positions in respective texts
+            common_event_list = sorted(common_events)
+
+            # Expected order: chronological order from reference (Golden Sample positions)
+            expected_order = [ref_event_positions[event_id] for event_id in common_event_list]
+
+            # Found order: order in generated summary
+            found_order = [hyp_event_positions[event_id] for event_id in common_event_list]
+
+            # Calculate Kendall's Tau between the two orderings
             tau, _ = kendalltau(expected_order, found_order)
-            
-            print(f"Kendall's Tau calculation:")
-            print(f"  - Hypothesis sentences: {len(hyp_sentences)}")
-            print(f"  - Matched sentences: {len(hyp_positions_in_ref)}")
-            print(f"  - Reference positions: {found_order[:10]}{'...' if len(found_order) > 10 else ''}")
-            print(f"  - Kendall's Tau: {tau:.4f}")
-            
             return tau if not np.isnan(tau) else 0.0
 
         except Exception as e:
             print(f"Warning: Error calculating Kendall's Tau from Golden Sample: {e}")
-            import traceback
-            traceback.print_exc()
             return 0.0
