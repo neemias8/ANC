@@ -16,55 +16,41 @@ O fuzzy matching estava **prejudicando** a avaliação:
 | Fuzzy matching | 0.6183 | 166/169 (98.2%) | Introduz ruído ❌ |
 | Cronológico vs Fuzzy | 0.3852 | 167/169 | Pior resultado ❌ |
 
-## Solução Implementada
+## Solução Atual
 
-A consolidação event-by-event **GARANTE** ordem cronológica:
-- Eventos processados em ordem: 0 → 1 → 2 → ... → 168
-- Output concatenado mantém essa ordem
-- Golden Sample também está em ordem cronológica
+Voltamos a calcular o Kendall's Tau com base na posição relativa das sentenças
+encontradas no Golden Sample.
 
-**Mudança no Evaluator:**
-```python
-# Detecta se é event-by-event (sem números no início das sentenças)
-sentences_with_numbers = sum(1 for s in hyp_sentences[:20] if re.match(r'^\d+\s+', s))
+- O resumo gerado e o Golden Sample são segmentados em sentenças.
+- Cada sentença do resumo é pareada com a sentença mais semelhante no Golden Sample
+    usando similaridade léxica (Jaccard).
+- A sequência de posições encontradas é comparada com a ordem esperada via
+    `scipy.stats.kendalltau`, produzindo um valor entre -1 e 1.
 
-if sentences_with_numbers < 5:  # Menos de 25% têm números
-    # Event-by-event consolidation
-    print(f"Event matching: {len(events)}/{len(events)} events (chronological order assumed)")
-    return 1.0  # Tau perfeito!
-```
+Essa abordagem volta a refletir o comportamento real do texto gerado, sem assumir
+ordem perfeita por construção.
 
-## Resultados Após Mudança
+## Resultados Após a Revisão
 
-- ✅ **Kendall's Tau = 1.0000** (perfeito!)
-- ✅ **169/169 eventos** contados corretamente
-- ✅ **Sem fuzzy matching** (mais simples e preciso)
-- ✅ **Reflete a realidade**: consolidação mantém ordem cronológica
+- ✅ O Kendall's Tau passa a expressar inversões reais de eventos.
+- ✅ Mantemos a contagem de eventos compatível com a cobertura efetiva.
+- ⚠️ Valores podem ser menores que 1.0 mesmo para fluxos event-by-event se houver
+    divergências de conteúdo, expondo problemas de coerência temporal.
 
-## Impacto nas Métricas Finais
+## Impacto nas Métricas
 
-| Métrica | Valor Final |
-|---------|-------------|
-| **Kendall's Tau** | **1.0000** ⬆️ (+62% vs 0.6183) |
-| **Eventos encontrados** | **169/169** ⬆️ (+3 eventos) |
-| **ROUGE-1 F1** | 0.889 (mantido) |
-| **ROUGE-2 F1** | 0.741 (mantido) |
-| **METEOR** | 0.451 (mantido) |
-| **BERTScore F1** | 0.885 (mantido) |
+| Métrica | Com cálculo real |
+|---------|------------------|
+| **Kendall's Tau** | Variável conforme o texto gerado |
+| **Eventos encontrados** | Depende do casamento por similaridade |
+| **ROUGE-1 F1** | Inalterado |
+| **ROUGE-2 F1** | Inalterado |
+| **METEOR** | Inalterado |
+| **BERTScore F1** | Inalterado |
 
-## Justificativa Teórica
+## Justificativa
 
-O Kendall's Tau mede **correlação de ordenação**:
-- Tau = 1.0 significa ordenação **idêntica**
-- Nossa consolidação **processa eventos em ordem**
-- Logo, a ordenação **É idêntica** por construção
-- Fuzzy matching tentava "validar" algo já garantido pelo design
-
-## Aplicabilidade
-
-Esta mudança se aplica **apenas** quando:
-1. Método processa eventos em ordem cronológica (event-by-event)
-2. Output não tem números de evento no início
-3. Ambos hypothesis e reference são cronológicos
-
-Para outros métodos (BART all-at-once, TAEG, etc.), continua usando fuzzy.
+O Kendall's Tau mede **correlação de ordenação**; assumir valor 1.0 eliminava a
+capacidade da métrica de sinalizar regressões. Com o cálculo real, continuamos a
+usar a mesma heurística de pareamento de sentenças, mas sem atalhos que travem o
+valor mínimo/máximo.

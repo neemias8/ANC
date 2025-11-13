@@ -1,450 +1,489 @@
 #!/usr/bin/env python3
 """
-PRIMERA Event-by-Event Consolidation
+PRIMERA Event-by-Event Consolidation v3.1
 
-Similar to TAEG's event-by-event approach, but uses PRIMERA to consolidate
-each of the 169 events instead of LexRank. This bypasses the decoder's
-1024-token limit by generating one event at a time.
+Consolidates gospel narratives event-by-event using PRIMERA correctly
+(without prompts). This version maintains the high-quality generation
+parameters from v3.1 while integrating with the existing evaluation system.
 """
 
 import sys
 import re
 import time
+import torch
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
-import torch
-from transformers import LEDTokenizer, LEDForConditionalGeneration
+from transformers import AutoTokenizer, LEDForConditionalGeneration
+import xml.etree.ElementTree as ET
 
 # Add src directory to path
 sys.path.insert(0, str(Path(__file__).parent / "src"))
 
-from data_loader import ChronologyLoader, BiblicalDataLoader
-from evaluator import SummarizationEvaluator
+from data_loader import ChronologyLoader
 
 
 class PRIMERAEventConsolidator:
     """
-    Consolidates gospel events one-by-one using PRIMERA.
-    
-    Similar to TAEG's approach, but uses abstractive summarization (PRIMERA)
-    instead of extractive (LexRank) for each event.
+    Consolidates gospel narratives event-by-event using PRIMERA correctly (no prompts).
+    Based on v3.1 with proven high-quality results.
     """
     
-    def __init__(self, device: str = None, model_name: str = "allenai/PRIMERA"):
-        """
-        Initialize the consolidator.
-        
-        Args:
-            device: Device to use ('cpu' or 'cuda')
-            model_name: HuggingFace model name
-        """
+    def __init__(
+        self,
+        model_name: str = "allenai/PRIMERA",
+        device: str = None,
+        data_dir: str = "data"
+    ):
         if device is None:
             self.device = "cuda" if torch.cuda.is_available() else "cpu"
         else:
             self.device = device
         
-        self.model_name = model_name
+        self.data_dir = Path(data_dir)
         
-        # Load PRIMERA model
         print(f"[*] Loading PRIMERA model on {self.device}...")
-        self.tokenizer = LEDTokenizer.from_pretrained(model_name)
+        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
         self.model = LEDForConditionalGeneration.from_pretrained(model_name).to(self.device)
-        print("[✓] Model loaded")
+        self.model.eval()
+        print("[OK] Model loaded successfully")
         
-        # Data loaders
-        self.chrono_loader = ChronologyLoader()
-        self.bible_loader = BiblicalDataLoader()
-        self.evaluator = SummarizationEvaluator()
-    
-    def _extract_verses_for_event(self, event: Dict) -> Dict[str, str]:
-        """
-        Extract the actual verse text for each gospel that mentions this event.
+        # Initialize chronology loader
+        self.chrono_loader = ChronologyLoader(data_dir=str(self.data_dir))
         
-        Args:
-            event: Event dictionary from ChronologyLoader
-            
-        Returns:
-            Dictionary mapping gospel names to their verse texts
-        """
-        import xml.etree.ElementTree as ET
-        
-        gospels_map = {
+        # Gospel XML files
+        self.gospel_files = {
             'matthew': 'EnglishNIVMatthew40_PW.xml',
             'mark': 'EnglishNIVMark41_PW.xml',
             'luke': 'EnglishNIVLuke42_PW.xml',
             'john': 'EnglishNIVJohn43_PW.xml'
         }
+    
+    def _parse_verse_reference(self, reference: str) -> List[Tuple[int, int, int, Optional[str], Optional[str]]]:
+        """
+        Parse verse reference (e.g., "26:6-13", "21:18-19a", "14:3-16:4").
         
-        event_texts = {}
+        Supports:
+        - Single verse: "26:6"
+        - Verse range: "26:6-13"
+        - Half verses: "21:18a", "21:19b"
+        - Multi-chapter: "14:3-16:4" (chapter 14 verse 3 to chapter 16 verse 4)
         
-        for gospel_key in ['matthew', 'mark', 'luke', 'john']:
-            reference = event.get(gospel_key, '')
-            if not reference or reference is None:
-                continue
-            reference = reference.strip()
-            if not reference:
+        Args:
+            reference: Verse reference string
+            
+        Returns:
+            List of (chapter, start_verse, end_verse, start_half, end_half) tuples
+        """
+        if not reference:
+            return []
+        
+        segments = []
+        for segment in re.split(r'[;,]', reference):
+            segment = segment.strip()
+            if not segment:
                 continue
             
-            try:
-                # Parse reference like "26:6-13", "21:18-19a", "21:19b-22", "12:36b"
-                parts = reference.split(':')
-                if len(parts) != 2:
-                    continue
+            # Try to match multi-chapter reference first (e.g., "14:3-16:4")
+            multi_match = re.match(r'(\d+):(\d+[ab]?)-(\d+):(\d+[ab]?)', segment)
+            if multi_match:
+                start_chapter = int(multi_match.group(1))
+                start_verse_str = multi_match.group(2)
+                end_chapter = int(multi_match.group(3))
+                end_verse_str = multi_match.group(4)
                 
-                chapter_num = int(parts[0])
-                verse_range = parts[1]
-                
-                # Check for 'a' or 'b' suffix (first/second half of verse)
-                # Examples: "18-19a" (verses 18-19, keep only first half of 19)
-                #           "19b-22" (verses 19-22, keep only second half of 19)
-                #           "36b" (verse 36, only second half)
-                start_half = None  # 'a', 'b', or None (full verse)
-                end_half = None
-                
-                # Parse verse range
-                if '-' in verse_range:
-                    start_part, end_part = verse_range.split('-')
-                    
-                    # Check start verse for a/b suffix
-                    if start_part.endswith('a') or start_part.endswith('b'):
-                        start_half = start_part[-1]
-                        start_verse = int(start_part[:-1])
-                    else:
-                        start_verse = int(start_part)
-                    
-                    # Check end verse for a/b suffix
-                    if end_part.endswith('a') or end_part.endswith('b'):
-                        end_half = end_part[-1]
-                        end_verse = int(end_part[:-1])
-                    else:
-                        end_verse = int(end_part)
+                # Parse start verse and half
+                if start_verse_str.endswith(('a', 'b')):
+                    start_half = start_verse_str[-1]
+                    start_verse = int(start_verse_str[:-1])
                 else:
-                    # Single verse, might have a/b suffix
-                    if verse_range.endswith('a') or verse_range.endswith('b'):
-                        start_half = verse_range[-1]
-                        end_half = start_half
-                        start_verse = end_verse = int(verse_range[:-1])
-                    else:
-                        start_verse = end_verse = int(verse_range)
+                    start_half = None
+                    start_verse = int(start_verse_str)
                 
-                # Load XML and extract verses
-                xml_file = Path("data") / gospels_map[gospel_key]
-                if not xml_file.exists():
-                    continue
+                # Parse end verse and half
+                if end_verse_str.endswith(('a', 'b')):
+                    end_half = end_verse_str[-1]
+                    end_verse = int(end_verse_str[:-1])
+                else:
+                    end_half = None
+                    end_verse = int(end_verse_str)
                 
-                tree = ET.parse(xml_file)
-                root = tree.getroot()
+                # Add first chapter (from start_verse to end of chapter)
+                segments.append((start_chapter, start_verse, 999, start_half, None))  # 999 = to end of chapter
                 
-                # Find chapter
-                for chapter in root.findall('.//chapter'):
-                    if int(chapter.get('number', 0)) == chapter_num:
-                        # Extract verses in range
-                        verses = []
-                        for verse in chapter.findall('.//verse'):
-                            verse_num = int(verse.get('number', 0))
-                            verse_text = verse.text.strip() if verse.text else ""
-                            
-                            if not verse_text:
-                                continue
-                            
-                            # Determine if this verse should be included and which half
-                            if start_verse <= verse_num <= end_verse:
-                                # Check if we need to take only half of the verse
-                                if verse_num == start_verse and start_half:
-                                    # First verse with a/b suffix
-                                    if start_half == 'a':
-                                        # Take first half (split at period, semicolon, or middle)
-                                        verse_text = self._get_first_half(verse_text)
-                                    elif start_half == 'b':
-                                        # Take second half
-                                        verse_text = self._get_second_half(verse_text)
-                                elif verse_num == end_verse and end_half:
-                                    # Last verse with a/b suffix
-                                    if end_half == 'a':
-                                        verse_text = self._get_first_half(verse_text)
-                                    elif end_half == 'b':
-                                        verse_text = self._get_second_half(verse_text)
-                                # else: use full verse
-                                
-                                verses.append(verse_text)
-                        
-                        if verses:
-                            event_texts[gospel_key.capitalize()] = ' '.join(verses)
-                        break
-            
-            except (ValueError, IndexError, AttributeError) as e:
-                # If parsing fails, skip this reference
+                # Add intermediate chapters (all verses)
+                for ch in range(start_chapter + 1, end_chapter):
+                    segments.append((ch, 1, 999, None, None))
+                
+                # Add last chapter (from beginning to end_verse)
+                segments.append((end_chapter, 1, end_verse, None, end_half))
+                
                 continue
+            
+            # Single chapter reference (e.g., "26:6-13" or "26:6")
+            match = re.match(r'(\d+):(.+)', segment)
+            if not match:
+                continue
+            
+            chapter = int(match.group(1))
+            verse_part = match.group(2).strip()
+            
+            start_half = end_half = None
+            if '-' in verse_part:
+                start_str, end_str = verse_part.split('-', 1)
+                
+                start_str = start_str.strip()
+                if start_str.endswith(('a', 'b')):
+                    start_half = start_str[-1]
+                    start_verse = int(start_str[:-1])
+                else:
+                    start_verse = int(start_str)
+                
+                end_str = end_str.strip()
+                if end_str.endswith(('a', 'b')):
+                    end_half = end_str[-1]
+                    end_verse = int(end_str[:-1])
+                else:
+                    end_verse = int(end_str)
+            else:
+                verse_part = verse_part.strip()
+                if verse_part.endswith(('a', 'b')):
+                    start_half = end_half = verse_part[-1]
+                    start_verse = end_verse = int(verse_part[:-1])
+                else:
+                    start_verse = end_verse = int(verse_part)
+            
+            segments.append((chapter, start_verse, end_verse, start_half, end_half))
         
-        return event_texts
+        return segments
     
-    def _get_first_half(self, verse_text: str) -> str:
+    def _split_verse_half(self, text: str, half: str) -> str:
         """
-        Get the first half of a verse text.
-        Splits at natural breaking points (period, semicolon, colon) or at midpoint.
+        Split a verse into halves (a/b) using intelligent punctuation-based splitting.
+        
+        Priority:
+        1. Strong punctuation (. ! ?) - complete sentences
+        2. Medium punctuation (; :) - clause boundaries
+        3. Weak punctuation (,) - phrase boundaries
+        4. Fallback: split at midpoint
         
         Args:
-            verse_text: Full verse text
+            text: Verse text
+            half: 'a' or 'b'
             
         Returns:
-            First half of the verse
+            Requested half of the verse
         """
-        # Try to split at punctuation marks (period, semicolon, colon)
-        for delimiter in ['. ', '; ', ': ']:
-            if delimiter in verse_text:
-                parts = verse_text.split(delimiter, 1)
-                # Return first part with the delimiter
-                return parts[0] + delimiter.strip()
+        # Try strong punctuation first (sentence boundaries)
+        for delimiter in ['. ', '! ', '? ']:
+            if delimiter in text:
+                parts = text.split(delimiter, 1)
+                if len(parts) == 2:
+                    if half == 'a':
+                        return parts[0] + delimiter.strip()
+                    else:
+                        # Capitalize first letter of second part
+                        second_part = parts[1].strip()
+                        if second_part:
+                            second_part = second_part[0].upper() + second_part[1:]
+                        return second_part
         
-        # If no natural break point, split at middle
-        mid = len(verse_text) // 2
-        # Find nearest space to avoid cutting words
-        space_idx = verse_text.rfind(' ', 0, mid + 20)
-        if space_idx > mid - 20:
-            return verse_text[:space_idx].strip()
+        # Try medium punctuation (clause boundaries)
+        for delimiter in ['; ', ': ']:
+            if delimiter in text:
+                parts = text.split(delimiter, 1)
+                if len(parts) == 2:
+                    if half == 'a':
+                        return parts[0] + delimiter.strip()
+                    else:
+                        return parts[1].strip()
         
-        # Fallback: return first half by character count
-        return verse_text[:mid].strip()
-    
-    def _get_second_half(self, verse_text: str) -> str:
+        # Try weak punctuation (comma) - but only if text is long enough
+        if len(text) > 80 and ', ' in text:
+            # Find comma closest to midpoint
+            mid = len(text) // 2
+            commas = [i for i, char in enumerate(text) if char == ',']
+            if commas:
+                closest_comma = min(commas, key=lambda x: abs(x - mid))
+                if half == 'a':
+                    return text[:closest_comma + 1].strip()
+                else:
+                    return text[closest_comma + 1:].strip()
+        
+        # Fallback: split at word boundary near midpoint
+        mid = len(text) // 2
+        space_idx = text.rfind(' ', mid - 20, mid + 20)  # Look within 20 chars of midpoint
+        if space_idx != -1:
+            if half == 'a':
+                return text[:space_idx].strip()
+            else:
+                return text[space_idx:].strip()
+        
+        # Last resort: return full text (don't split)
+        return text
+
+    def extract_gospel_text(self, gospel: str, reference: str) -> str:
         """
-        Get the second half of a verse text.
-        Splits at natural breaking points (period, semicolon, colon) or at midpoint.
+        Extract text from a gospel based on verse reference.
         
         Args:
-            verse_text: Full verse text
+            gospel: Gospel name (lowercase: 'matthew', 'mark', 'luke', 'john')
+            reference: Verse reference (e.g., "26:6-13")
             
         Returns:
-            Second half of the verse
+            Extracted text
         """
-        # Try to split at punctuation marks
-        for delimiter in ['. ', '; ', ': ']:
-            if delimiter in verse_text:
-                parts = verse_text.split(delimiter, 1)
-                if len(parts) > 1:
-                    # Return second part
-                    return parts[1].strip()
+        if not reference or gospel not in self.gospel_files:
+            return ""
         
-        # If no natural break point, split at middle
-        mid = len(verse_text) // 2
-        # Find nearest space
-        space_idx = verse_text.find(' ', mid - 20)
-        if space_idx < mid + 20 and space_idx != -1:
-            return verse_text[space_idx:].strip()
+        xml_file = self.data_dir / self.gospel_files[gospel]
+        if not xml_file.exists():
+            return ""
         
-        # Fallback: return second half by character count
-        return verse_text[mid:].strip()
-    
-    def _clean_summary(self, text: str) -> str:
+        tree = ET.parse(xml_file)
+        root = tree.getroot()
+        
+        segments = self._parse_verse_reference(reference)
+        all_verses = []
+        
+        for chapter_num, start_verse, end_verse, start_half, end_half in segments:
+            for chapter in root.findall('.//chapter'):
+                if int(chapter.get('number', 0)) == chapter_num:
+                    for verse in chapter.findall('.//verse'):
+                        verse_num = int(verse.get('number', 0))
+                        verse_text = verse.text.strip() if verse.text else ""
+                        
+                        if not verse_text:
+                            continue
+                        
+                        if start_verse <= verse_num <= end_verse:
+                            if verse_num == start_verse and start_half:
+                                verse_text = self._split_verse_half(verse_text, start_half)
+                            elif verse_num == end_verse and end_half:
+                                verse_text = self._split_verse_half(verse_text, end_half)
+                            
+                            all_verses.append(verse_text)
+                    break
+        
+        return ' '.join(all_verses)
+
+    def extract_event_texts(self, event: Dict) -> Dict[str, str]:
         """
-        Clean generated summary by removing metadata, separators, and non-English characters.
+        Extract gospel texts for a specific event.
+        
+        Args:
+            event: Event dictionary with gospel references
+            
+        Returns:
+            Dictionary mapping gospel names to their texts
+        """
+        gospel_texts = {}
+        for gospel in ['matthew', 'mark', 'luke', 'john']:
+            reference = event.get(gospel, '') or ''  # Handle None values
+            reference = reference.strip()
+            if reference:
+                text = self.extract_gospel_text(gospel, reference)
+                if text:
+                    gospel_texts[gospel.capitalize()] = text
+        return gospel_texts
+
+    def generate_consolidation(self, multi_doc_input: str) -> str:
+        """
+        Generates a consolidated narrative from concatenated gospel texts.
+        NO PROMPT IS USED - just documents separated by <doc-sep>.
+        
+        This uses the proven v3.1 parameters for high-quality output.
+        
+        Args:
+            multi_doc_input: Gospel texts joined with <doc-sep>
+            
+        Returns:
+            Generated consolidated text
+        """
+        inputs = self.tokenizer(
+            multi_doc_input,
+            return_tensors="pt",
+            max_length=4096,
+            truncation=True
+        ).to(self.device)
+        
+        with torch.no_grad():
+            outputs = self.model.generate(
+                inputs["input_ids"],
+                max_length=1024,
+                num_beams=5,  # Increased beams for better quality
+                length_penalty=1.5,  # Slightly encourage longer, more complete text
+                repetition_penalty=1.2,
+                no_repeat_ngram_size=3,
+                early_stopping=True,
+            )
+        
+        generated_text = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
+        return generated_text
+
+    def clean_output(self, text: str) -> str:
+        """
+        Clean generated output with v3.1 punctuation fix.
         
         Args:
             text: Raw generated text
             
         Returns:
-            Cleaned text suitable for narrative
+            Cleaned text
         """
-        import re
-        
         if not text:
-            return ''
+            return ""
         
-        # Remove document metadata patterns like "Document 1 (Matthew):"
-        text = re.sub(r'Document\s*\d*\s*(\([^)]+\))?\s*:+', '', text, flags=re.IGNORECASE)
+        # Remove separator token
+        text = re.sub(r'<doc-sep>', ' ', text)
         
-        # Remove lines that are just gospel labels (e.g. "Matthew:")
-        text = re.sub(r'^(Matthew|Mark|Luke|John)\s*:\s*', '', text, flags=re.IGNORECASE | re.M)
+        # Normalize whitespace
+        text = re.sub(r'\s+', ' ', text).strip()
         
-        # Remove separator patterns (bars, equals, dashes)
-        text = re.sub(r'[-=_|\[\]]{3,}', ' ', text)
+        # Add space after punctuation if missing (v3.1 FIX)
+        # Fixes: "word.Word" -> "word. Word"
+        text = re.sub(r'([.!?;:,])([A-Z])', r'\1 \2', text)
         
-        # Remove other common metadata patterns
-        text = re.sub(r'\[\d+\]', '', text)  # [1], [2], etc.
-        text = re.sub(r'\(\d+:\d+[ab]?-?\d*[ab]?\)', '', text)  # (21:18-19a) references
-        
-        # Remove CJK and other scripts that appeared as noise (common ranges)
-        text = re.sub(r'[\u4e00-\u9fff\u3400-\u4dbf\u3040-\u30ff\uac00-\ud7af]+', '', text)
-        
-        # Remove URLs and domain patterns
-        text = re.sub(r'https?://[^\s]+', '', text)
-        text = re.sub(r'www\.[^\s]+', '', text)
-        
-        # Remove source attribution patterns (more comprehensive)
-        text = re.sub(r'Information from:[^.\n]*', '', text, flags=re.IGNORECASE)
-        text = re.sub(r'Source:[^.\n]*', '', text, flags=re.IGNORECASE)
-        
-        # Remove JSON-like noise (common in web scraping artifacts)
-        text = re.sub(r'\{[^}]*\}', '', text)  # Remove JSON objects (any content)
-        text = re.sub(r'__\w+__', '', text)  # Remove __property__ patterns
-        text = re.sub(r'"[^"]*"\s*:\s*"[^"]*"', '', text)  # Remove "key":"value" patterns
-        text = re.sub(r'"[^"]*"\s*:\s*\d+', '', text)  # Remove "key":123 patterns
-        
-        # Remove specific known garbage patterns
-        text = re.sub(r'\benaeoa\b', '', text, flags=re.IGNORECASE)  # Specific gibberish seen
-        text = re.sub(r'\bfootnote\s*\d*\b', '', text, flags=re.IGNORECASE)  # Footnote markers
-        
-        # Remove nonsense word patterns - VERY CONSERVATIVE
-        # Only remove words with 6+ consecutive consonants (very rare in real English)
-        # This preserves biblical names like "Bethphage" but catches extreme gibberish
-        text = re.sub(r'\b\w*[bcdfghjklmnpqrstvwxyz]{6,}\w*\b', '', text, flags=re.IGNORECASE)
-        
-        # Strip any remaining control characters
-        text = re.sub(r'[^\x09\x0A\x0D\x20-\x7E\xA0-\xFF]', '', text)
-        
-        # Normalize whitespace and punctuation
-        text = re.sub(r'\s+', ' ', text)
-        text = re.sub(r'\s+([.,;:!?])', r'\1', text)  # Fix spaces before punctuation
-        text = re.sub(r'\.{2,}', '. ', text)  # Ellipses -> single period + space
-        
-        # Ensure space after sentence-ending punctuation (. ! ?)
-        text = re.sub(r'([.!?])([A-Z])', r'\1 \2', text)  # Add space between ". A" -> ". A"
-        text = re.sub(r'([.!?])(["\'"])', r'\1 \2', text)  # Add space between ". '" -> ". '"
-        
-        text = text.strip()
-        
-        # Capitalize first character only (avoid full sentence re-capitalization)
+        # Ensure first letter is capitalized
         if text:
             text = text[0].upper() + text[1:]
         
         return text
-    
-    def _consolidate_event(
+
+    def validate_output(self, generated: str) -> Tuple[bool, List[str]]:
+        """
+        Validate generated output for quality issues.
+        
+        Args:
+            generated: Generated text
+            
+        Returns:
+            (is_valid, list of issues)
+        """
+        issues = []
+        
+        if len(generated.split()) < 10:
+            issues.append("Output too short (< 10 words)")
+        
+        # Check for garbled text (many non-ascii/latin chars)
+        non_latin_chars = re.findall(r'[^\x00-\x7F\u00C0-\u017F]+', generated)
+        if len(non_latin_chars) > 10:
+            issues.append(f"Contains garbled text: {''.join(non_latin_chars)[:20]}...")
+
+        is_valid = len(issues) == 0
+        return is_valid, issues
+
+    def consolidate_event(
         self,
         event: Dict,
         event_num: int,
         total_events: int,
         verbose: bool = True
-    ) -> str:
+    ) -> Tuple[str, bool]:
         """
-        Consolidate a single event using PRIMERA.
+        Consolidate a single event from multiple gospel accounts.
         
         Args:
-            event: Event dictionary from ChronologyLoader
-            event_num: Current event number (1-indexed)
+            event: Event dictionary
+            event_num: Current event number
             total_events: Total number of events
             verbose: Print progress
             
         Returns:
-            Consolidated narrative for this event
+            (consolidated_text, success)
         """
-        # Extract gospel texts for this event
-        gospel_texts = self._extract_verses_for_event(event)
+        gospel_texts = self.extract_event_texts(event)
         
         if not gospel_texts:
             if verbose:
-                print(f"   [!] Event {event_num}/{total_events}: No gospel texts found - skipping")
-            return ""
-        
-        # Prepare multi-document input (PRIMERA format: text1 <doc-sep> text2 <doc-sep> text3)
-        multi_doc_input = " <doc-sep> ".join(gospel_texts.values())
-        
-        # Calculate adaptive output length
-        # For event consolidation: aim for 80-90% of total input length
-        total_tokens = sum(
-            len(self.tokenizer.encode(text, add_special_tokens=False))
-            for text in gospel_texts.values()
-        )
-        
-        max_output_tokens = int(total_tokens * 0.85)  # 85% of input
-        min_output_tokens = int(total_tokens * 0.70)  # At least 70%
-        
-        # Clamp to PRIMERA decoder limits (max 1024)
-        max_output_tokens = max(30, min(max_output_tokens, 1024))
-        min_output_tokens = max(30, min(min_output_tokens, max_output_tokens - 10))
-        
+                print(f"  [{event_num}/{total_events}] No gospel texts found - skipping")
+            return "", False
+
+        if len(gospel_texts) == 1:
+            if verbose:
+                print(f"  [{event_num}/{total_events}] {event['description']} (single gospel, no consolidation needed)")
+            return self.clean_output(list(gospel_texts.values())[0]), True
+
         if verbose:
-            print(f"   Event {event_num}/{total_events}: {len(gospel_texts)} gospels, "
-                  f"{total_tokens} input tokens -> {min_output_tokens}-{max_output_tokens} output tokens")
-        
-        # Tokenize input (PRIMERA encoder max = 4096)
-        max_input_length = min(4096, self.model.config.max_position_embeddings - 1)
-        inputs = self.tokenizer(
-            multi_doc_input,
-            return_tensors="pt",
-            max_length=max_input_length,
-            truncation=True,
-            padding=True
-        ).to(self.device)
-        
-        # Generate consolidated narrative
-        with torch.no_grad():
-            outputs = self.model.generate(
-                inputs["input_ids"],
-                max_new_tokens=max_output_tokens,
-                min_new_tokens=min_output_tokens,
-                length_penalty=1.0,  # Neutral (not brevity-focused)
-                repetition_penalty=1.2,
-                num_beams=4,
-                early_stopping=False,  # Must respect min_new_tokens
-                no_repeat_ngram_size=3
-            )
-        
-        # Decode
-        summary = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
-        
-        # Clean
-        summary = self._clean_summary(summary)
-        
-        return summary
-    
+            gospels_list = ', '.join(gospel_texts.keys())
+            print(f"  [{event_num}/{total_events}] {event['description']}")
+            print(f"      Consolidating {len(gospel_texts)} gospels: {gospels_list}")
+
+        # Correct input format for PRIMERA: no prompts, just docs separated by <doc-sep>
+        multi_doc_input = " <doc-sep> ".join(gospel_texts.values())
+
+        try:
+            generated = self.generate_consolidation(multi_doc_input)
+            cleaned = self.clean_output(generated)
+            is_valid, issues = self.validate_output(cleaned)
+            
+            if not is_valid:
+                if verbose: 
+                    print(f"      ⚠ Validation failed: {'; '.join(issues)}")
+                    print(f"      → Falling back to longest gospel text.")
+                cleaned = self.clean_output(max(gospel_texts.values(), key=len))
+            
+            if verbose:
+                print(f"      [OK] Generated {len(cleaned)} characters")
+            
+            return cleaned, is_valid
+            
+        except Exception as e:
+            if verbose:
+                print(f"      ✗ Generation error: {e}")
+            return "", False
+
     def consolidate_all_events(
         self,
         verbose: bool = True,
         save_progress: bool = True
     ) -> str:
         """
-        Process all 169 events one-by-one and concatenate results.
+        Consolidate all 169 events from the chronology.
         
         Args:
             verbose: Print progress
-            save_progress: Save intermediate results every 20 events
+            save_progress: Save checkpoints every 20 events
             
         Returns:
-            Complete consolidated narrative
+            Final consolidated narrative
         """
         if verbose:
             print("\n" + "="*80)
-            print("PRIMERA Event-by-Event Consolidation")
+            print("PRIMERA Event-by-Event Consolidation v3.1")
             print("="*80)
         
-        # Load chronology (169 events)
+        # Load chronology using ChronologyLoader
         events = self.chrono_loader.load_chronology()
         
         if verbose:
-            print(f"\n[*] Loaded {len(events)} events from chronology")
-            print(f"[*] Processing each event individually...")
+            print(f"\n[*] Loaded {len(events)} events. Processing...\n")
         
         consolidated_parts = []
+        success_count = 0
         start_time = time.time()
         
+        output_dir = Path("outputs")
+        output_dir.mkdir(exist_ok=True)
+        
         for i, event in enumerate(events, 1):
-            event_summary = self._consolidate_event(
+            consolidated, success = self.consolidate_event(
                 event,
-                event_num=i,
-                total_events=len(events),
-                verbose=verbose
+                i,
+                len(events),
+                verbose
             )
             
-            if event_summary:
-                consolidated_parts.append(event_summary)
+            if consolidated:
+                # Add event number prefix
+                consolidated_with_num = f"{i} {consolidated}"
+                consolidated_parts.append(consolidated_with_num)
+                if success:
+                    success_count += 1
             
-            # Save progress every 20 events
+            # Save checkpoint every 20 events
             if save_progress and i % 20 == 0:
-                elapsed = time.time() - start_time
-                avg_time = elapsed / i
-                remaining = (len(events) - i) * avg_time
-                
-                if verbose:
-                    print(f"\n   [Progress] {i}/{len(events)} events processed "
-                          f"({i/len(events)*100:.1f}%)")
-                    print(f"   [Time] Elapsed: {elapsed/60:.1f}m, "
-                          f"Remaining: ~{remaining/60:.1f}m")
-                
-                # Save checkpoint
                 checkpoint = "\n\n".join(consolidated_parts)
-                checkpoint_path = Path("outputs") / f"primera_event_checkpoint_{i}.txt"
-                checkpoint_path.parent.mkdir(exist_ok=True)
+                checkpoint_path = output_dir / f"checkpoint_{i}.txt"
                 with open(checkpoint_path, 'w', encoding='utf-8') as f:
                     f.write(checkpoint)
                 
@@ -457,10 +496,13 @@ class PRIMERAEventConsolidator:
         total_time = time.time() - start_time
         
         if verbose:
-            print(f"\n[✓] Consolidation complete!")
+            print(f"\n{'='*80}")
+            print(f"[OK] Consolidation complete!")
             print(f"    Total time: {total_time/60:.1f} minutes")
-            print(f"    Output length: {len(final_narrative):,} chars")
             print(f"    Events processed: {len(consolidated_parts)}/{len(events)}")
+            print(f"    Validation success rate: {success_count}/{len(events)} ({success_count/len(events)*100:.1f}%)")
+            print(f"    Output length: {len(final_narrative):,} characters")
+            print("="*80)
         
         return final_narrative
 
@@ -470,7 +512,7 @@ def main():
     import argparse
     
     parser = argparse.ArgumentParser(
-        description="PRIMERA Event-by-Event Consolidation (169 events)"
+        description="PRIMERA Event-by-Event Consolidation v3.1"
     )
     
     parser.add_argument(
@@ -510,26 +552,8 @@ def main():
     with open(output_path, 'w', encoding='utf-8') as f:
         f.write(narrative)
     
-    print(f"\n[✓] Saved to: {output_path}")
+    print(f"\n[OK] Saved to: {output_path}")
     print(f"    Size: {len(narrative):,} chars")
-    
-    # Evaluate against Golden Sample
-    print(f"\n{'='*80}")
-    print("Evaluating against Golden Sample")
-    print('='*80)
-    
-    evaluator = SummarizationEvaluator()
-    loader = BiblicalDataLoader()
-    golden_sample = loader.load_golden_sample()
-    
-    scores = evaluator.evaluate(narrative, golden_sample)
-    
-    print(f"\nResults:")
-    print(f"  Kendall's Tau:  {scores['kendall_tau']:.4f}")
-    print(f"  ROUGE-L:        {scores['rouge_l']:.4f}")
-    if scores.get('meteor') is not None:
-        print(f"  METEOR:         {scores['meteor']:.4f}")
-    print(f"  BERTScore:      {scores['bertscore']:.4f}")
     
     # Show preview
     print(f"\n{'='*80}")

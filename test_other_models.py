@@ -84,7 +84,7 @@ class ModelTester:
         results = self.evaluator.evaluate_summary(summary, self.golden_sample)
         
         # Save
-        output_path = Path("outputs/bart_large_cnn_output.txt")
+        output_path = Path("outputs/bart_summary.txt")
         output_path.parent.mkdir(exist_ok=True)
         output_path.write_text(summary, encoding="utf-8")
         
@@ -155,7 +155,7 @@ class ModelTester:
         results = self.evaluator.evaluate_summary(summary, self.golden_sample)
         
         # Save
-        output_path = Path("outputs/pegasus_xsum_output.txt")
+        output_path = Path("outputs/pegasus_xsum_summary.txt")
         output_path.parent.mkdir(exist_ok=True)
         output_path.write_text(summary, encoding="utf-8")
         
@@ -226,7 +226,7 @@ class ModelTester:
         results = self.evaluator.evaluate_summary(summary, self.golden_sample)
         
         # Save
-        output_path = Path("outputs/pegasus_large_output.txt")
+        output_path = Path("outputs/pegasus_large_summary.txt")
         output_path.parent.mkdir(exist_ok=True)
         output_path.write_text(summary, encoding="utf-8")
         

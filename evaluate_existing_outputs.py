@@ -7,7 +7,8 @@ import sys
 from pathlib import Path
 
 # Add src directory to path
-sys.path.insert(0, str(Path(__file__).parent / "src"))
+ROOT_DIR = Path(__file__).parent
+sys.path.insert(0, str(ROOT_DIR))
 
 from src.evaluator import SummarizationEvaluator
 from src.data_loader import BiblicalDataLoader
@@ -28,9 +29,10 @@ def main():
     outputs = [
         ("TAEG (LEXRANK-TA)", "outputs/taeg_summary_lexrank-ta.txt"),
         ("BART", "outputs/bart_summary.txt"),
-        ("PEGASUS", "outputs/pegasus_summary.txt"),
-        ("PRIMERA MDS", "outputs/primera_standard_mds.txt"),
-        ("PRIMERA Event Consolidation", "outputs/primera_event_by_event.txt"),
+        ("PEGASUS-XSUM", "outputs/pegasus_xsum_summary.txt"),
+        ("PEGASUS-Large", "outputs/pegasus_large_summary.txt"),
+        ("PRIMERA Standard MDS", "outputs/primera_standard_mds.txt"),
+        ("PRIMERA Event-by-Event", "outputs/primera_event_by_event.txt"),
     ]
     
     results = []
