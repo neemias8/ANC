@@ -127,7 +127,8 @@ class SummarizationEvaluator:
         # Use Golden Sample to determine event ordering
         return self._calculate_kendall_tau_from_golden_sample(hypothesis, reference)
 
-    def evaluate_summary(self, hypothesis: str, reference: str, is_temporal_anchored: bool = False) -> Dict[str, Any]:
+    def evaluate_summary(self, hypothesis: str, reference: str, is_temporal_anchored: bool = False,
+                        reference_events: list = None, hypothesis_events: list = None) -> Dict[str, Any]:
         """
         Evaluate a summary against a reference using all metrics.
 
@@ -135,6 +136,8 @@ class SummarizationEvaluator:
             hypothesis: Generated summary
             reference: Reference summary
             is_temporal_anchored: Whether the method guarantees chronological ordering
+            reference_events: List of (event_id, event_text) tuples from Golden Sample
+            hypothesis_events: List of (event_id, event_text) tuples from generated summary
 
         Returns:
             Dictionary with all evaluation metrics
@@ -151,7 +154,13 @@ class SummarizationEvaluator:
         results['bertscore'] = self.calculate_bertscore(hypothesis, reference)
 
         # Kendall's Tau - temporal order correlation
-        results['kendall_tau'] = self.calculate_kendall_tau(hypothesis, reference, is_temporal_anchored)
+        # If events are provided, use event ID-based calculation
+        if reference_events and hypothesis_events:
+            results['kendall_tau'] = self._calculate_kendall_tau_event_ids(
+                reference_events, hypothesis_events
+            )
+        else:
+            results['kendall_tau'] = self.calculate_kendall_tau(hypothesis, reference, is_temporal_anchored)
 
         return results
 
@@ -310,4 +319,78 @@ class SummarizationEvaluator:
 
         except Exception as e:
             print(f"Warning: Error calculating Kendall's Tau from Golden Sample: {e}")
+            return 0.0
+
+    def _calculate_kendall_tau_event_ids(self, reference_events: list, hypothesis_events: list) -> float:
+        """
+        Calculate Kendall's Tau based on numbered event IDs.
+        
+        This method compares the order of events by their IDs. Both summaries should
+        have events numbered sequentially (1, 2, 3, ...). Returns 1.0 if the order
+        matches perfectly, -1.0 if completely reversed, 0.0 if random.
+        
+        Args:
+            reference_events: List of (event_id, event_text) from Golden Sample
+            hypothesis_events: List of (event_id, event_text) from generated summary
+            
+        Returns:
+            Kendall's Tau correlation coefficient (-1 to 1)
+        """
+        try:
+            if not reference_events or not hypothesis_events:
+                return 0.0
+            
+            # Extract event IDs
+            ref_ids = [event_id for event_id, _ in reference_events]
+            hyp_ids = [event_id for event_id, _ in hypothesis_events]
+            
+            # Find common event IDs that appear in both
+            common_ids = set(ref_ids) & set(hyp_ids)
+            
+            # Report missing events
+            missing_ids = set(ref_ids) - set(hyp_ids)
+            if missing_ids:
+                missing_sorted = sorted(missing_ids)
+                print(f"  [Event ID Kendall] Missing events: {missing_sorted}")
+            
+            if len(common_ids) < 2:
+                # Not enough common events to calculate correlation
+                coverage = len(common_ids) / max(len(ref_ids), 1)
+                print(f"  [Event ID Kendall] Only {len(common_ids)} common events found. Coverage: {coverage:.2%}")
+                return coverage * 0.3  # Low score for poor coverage
+            
+            # Get positions of common events in reference (defines expected order)
+            ref_positions = {event_id: pos for pos, event_id in enumerate(ref_ids) if event_id in common_ids}
+            
+            # Get positions of common events in hypothesis
+            hyp_positions = {event_id: pos for pos, event_id in enumerate(hyp_ids) if event_id in common_ids}
+            
+            # Build ordered lists for Kendall calculation
+            common_ids_sorted = sorted(common_ids)
+            
+            # Expected order: position in reference (Golden Sample)
+            expected_order = [ref_positions[eid] for eid in common_ids_sorted]
+            
+            # Found order: position in hypothesis
+            found_order = [hyp_positions[eid] for eid in common_ids_sorted]
+            
+            # Calculate Kendall's Tau
+            tau, p_value = kendalltau(expected_order, found_order)
+            
+            coverage = len(common_ids) / len(ref_ids)
+            print(f"  [Event ID Kendall] {len(common_ids)}/{len(ref_ids)} events found ({coverage:.1%} coverage)")
+            print(f"  [Event ID Kendall] Tau = {tau:.4f} (p-value: {p_value:.4f})")
+            
+            if np.isnan(tau):
+                return 0.0
+            
+            # If coverage is very low, penalize the score
+            if coverage < 0.5:
+                tau = tau * coverage * 2  # Scale down for low coverage
+                print(f"  [Event ID Kendall] Applied coverage penalty: Tau = {tau:.4f}")
+            
+            return tau
+            
+        except Exception as e:
+            print(f"Warning: Error calculating event ID-based Kendall's Tau: {e}")
             return 0.0

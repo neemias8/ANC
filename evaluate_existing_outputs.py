@@ -4,6 +4,7 @@ Evaluate existing output files against Golden Sample.
 """
 
 import sys
+import re
 from pathlib import Path
 
 # Add src directory to path
@@ -13,6 +14,35 @@ sys.path.insert(0, str(ROOT_DIR))
 from src.evaluator import SummarizationEvaluator
 from src.data_loader import BiblicalDataLoader
 
+def extract_numbered_events(text: str) -> list:
+    """
+    Extract numbered event blocks from Golden Sample or summary.
+    Returns list of tuples: (event_id, event_text)
+    """
+    # Match number followed by space and optionally quotes, then capital letter
+    # Works even if text is all on one line
+    pattern = re.compile(r'\b(\d+)\s+"?([A-Z])')
+    events = []
+    
+    matches = list(pattern.finditer(text))
+    
+    for i, match in enumerate(matches):
+        event_id = int(match.group(1))
+        # Start position is the number
+        start_pos = match.start()
+        
+        # End position is the start of next event (or end of text)
+        if i + 1 < len(matches):
+            end_pos = matches[i + 1].start()
+        else:
+            end_pos = len(text)
+        
+        # Extract event text
+        event_text = text[start_pos:end_pos].strip()
+        events.append((event_id, event_text))
+    
+    return events
+
 def main():
     """Evaluate existing outputs."""
     
@@ -21,6 +51,10 @@ def main():
     loader = BiblicalDataLoader()
     golden_sample = loader.load_golden_sample()
     print(f"Golden Sample: {len(golden_sample)} characters")
+    
+    # Extract numbered events from Golden Sample
+    golden_events = extract_numbered_events(golden_sample)
+    print(f"Extracted {len(golden_events)} numbered events from Golden Sample")
     
     # Initialize evaluator
     evaluator = SummarizationEvaluator()
@@ -51,8 +85,17 @@ def main():
         hypothesis = path.read_text(encoding='utf-8')
         print(f"Length: {len(hypothesis)} characters, {len(hypothesis.split())} words")
         
+        # Extract events from hypothesis
+        hypothesis_events = extract_numbered_events(hypothesis)
+        print(f"Extracted {len(hypothesis_events)} numbered events from summary")
+        
         # Evaluate
-        eval_results = evaluator.evaluate_summary(hypothesis, golden_sample)
+        eval_results = evaluator.evaluate_summary(
+            hypothesis, 
+            golden_sample,
+            reference_events=golden_events,
+            hypothesis_events=hypothesis_events
+        )
         
         # Print results
         print(f"\nROUGE-L F1: {eval_results['rouge']['rougeL']['f1']:.4f}")
